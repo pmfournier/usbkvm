@@ -11,6 +11,10 @@
 #include <stdbool.h>
 #include <string.h>
 #include <getopt.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/input.h>
+#include <inttypes.h>
 
 #include <libudev.h>
 
@@ -33,31 +37,42 @@ struct hid_in {
 //};
 //
 //
-//bool
-//register_physical_keyboard(struct hid_in *hin)
-//{
-//	/* Set up listening for events */
-//
-//	int fd = open(hin->input_dev, O_RDONLY);
-//	if (fd == -1) {
-//		PERROR("open");
-//		return false;
-//	}
-//
-//	list_add(kbpt.phys_kb, fd);
-//
-//	/* Ok, we have a physical keyboard all setup;
-//	 * now we can set up an emulated keyboard.
-//	 */
-//
-//	if (!register_emulated_keyboard()) {
-//		ERROR("failed to register emulated keyboard");
-//		return false;
-//	}
-//
-//	return true;
-//}
-//
+
+int fd_keyboard = -1;
+
+bool
+register_physical_keyboard(struct hid_in *hin)
+{
+	/* Set up listening for events */
+
+	int fd = open(hin->input_dev, O_RDONLY);
+	if (fd == -1) {
+		PERROR("open");
+		return false;
+	}
+
+	int result = ioctl(fd, EVIOCGRAB, 1);
+	if (result == -1) {
+		PERROR("ioctl(EVIOCGRAB)");
+		return false;
+	}
+
+	//list_add(kbpt.phys_kb, fd);
+
+	fd_keyboard = fd;
+
+	/* Ok, we have a physical keyboard all setup;
+	 * now we can set up an emulated keyboard.
+	 */
+
+	//if (!register_emulated_keyboard()) {
+	//	ERROR("failed to register emulated keyboard");
+	//	return false;
+	//}
+
+	return true;
+}
+
 bool
 probe_device(struct udev_device *dev)
 {
@@ -98,17 +113,24 @@ probe_device(struct udev_device *dev)
 
 	}
 
-	if (event_dev == NULL || usbhid_sys_path == NULL) {
+	if (event_dev == NULL) {
+		DEBUG("rejected device because we couldn't find a device for it");
+		return false;
+	}
+	if (usbhid_sys_path == NULL) {
+		DEBUG("rejected device because we couldn't find a hid parent for it");
 		return false;
 	}
 
-	/* USB keyboards have a key bitmap that ends in fffffffffffffffe */
-	const char needle[] = "fffffffffffffffe";
+	/* USB keyboards have a key bitmap that ends in ffffffff fffffffe */
+	const char needle[] = "ffffffff fffffffe";
 	if (strlen(capabilities_key) < sizeof(needle) -1) {
+		DEBUG("rejected device because it doesn't have the right key capabilities length");
 		return false;
 	}
 
 	if (strcmp(capabilities_key + strlen(capabilities_key) - (sizeof(needle) - 1), needle) != 0) {
+		DEBUG("rejected device because it doesn't have the right key capabilities (%s)", capabilities_key);
 		return false;
 	}
 
@@ -138,22 +160,115 @@ probe_device(struct udev_device *dev)
 		return false;
 	}
 
-	//if (!register_physical_keyboard(hin)) {
-	//	ERROR("failed to register keyboard");
-	//	return false;
-	//}
+	if (!register_physical_keyboard(hin)) {
+		ERROR("failed to register keyboard");
+		return false;
+	}
 
 	return true;
+}
+
+uint16_t modifiers[] = {
+	KEY_LEFTCTRL,
+	KEY_LEFTSHIFT,
+	KEY_LEFTALT,
+	KEY_LEFTMETA,
+	KEY_RIGHTCTRL,
+	KEY_RIGHTSHIFT,
+	KEY_RIGHTALT,
+	KEY_RIGHTMETA,
+};
+
+int8_t key_to_usb_modifier(uint16_t key)
+{
+	int i;
+	for (i = 0; i < 8; i++) {
+		if (key == modifiers[i]) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+bool input_loop(void)
+{
+	int result;
+	struct input_event ev;
+	uint8_t modifier_state = 0;
+
+	int64_t current_key = 0;
+	int64_t current_scancode = 0;
+	int64_t current_act = -1;
+
+	for (;;) {
+		result = read(fd_keyboard, &ev, sizeof(struct input_event));
+		if (result == -1) {
+			PERROR("read");
+			return false;
+		}
+		if (result == 0) {
+			ERROR("Got end of file on evdev");
+			return false;
+		}
+
+		if (ev.type == EV_SYN) {
+			/* Done, check if we have a valid event */
+			if (!current_key || !current_scancode || current_act == -1) {
+				current_key = 0;
+				current_scancode = 0;
+				current_act = -1;
+				continue;
+			}
+			ERROR("%s linux key %" PRId64 " (usb %" PRId64 ")", current_act?"Pressed":"Released", current_key, current_scancode);
+
+			char report[8];
+			memset(report, 0, sizeof(report));
+
+			int8_t mod = key_to_usb_modifier(current_key);
+
+			if (current_act == 1) {
+				if (mod != -1) {
+					modifier_state |= (1 << mod);
+				} else {
+					report[2] = current_scancode;
+				}
+				report[0] = modifier_state;
+				emukb_send_report(report, 8);
+			} else {
+				if (mod != -1) {
+					modifier_state &= ~(1 << mod);
+				}
+				report[0] = modifier_state;
+				emukb_send_report(report, 8);
+			}
+
+			current_key = 0;
+			current_scancode = 0;
+			current_act = -1;
+		}
+
+		if (ev.type == EV_KEY && (ev.value == 0 || ev.value == 1)) {
+			current_key = ev.code;
+			current_act = ev.value;
+		}
+
+		if (ev.type == EV_MSC && ev.code == MSC_SCAN) {
+			current_scancode = ev.value & 0xffff;
+		}
+
+		//DEBUG("Got event %" PRIu16 " %" PRIu16 " %" PRId32, ev.type, ev.code, ev.value);
+	}
 }
 
 bool run(void) {
 	emukb_unregister();
 	emukb_register();
 
-	exit(0);
-
 	/* Look at installed hardware */
 	udev_initial_probe(probe_device);
+
+	input_loop();
 	
 	return true;
 }
