@@ -169,13 +169,19 @@ extern int auxfd;
 //	return true;
 //}
 
-static bool emumouse_send_report_aux(void *report, size_t len)
+static bool emumouse_send_report_aux(uint8_t but, int16_t x, int16_t y)
 {
 	int result;
 
+	uint8_t report[4];
+	report[0] = but;
+	report[1] = x;
+	report[2] = y;
+	report[3] = 0;
+
 	char *reportc = (char *)report;
 
-	char fancy_report[3 * len + 1];
+	char fancy_report[3 * 4 + 4];
 	sprintf(fancy_report, "M %hhx %hhx %hhx %hhx\n",
 		reportc[0],
 		reportc[1],
@@ -196,26 +202,29 @@ static bool emumouse_send_report_aux(void *report, size_t len)
 	return true;
 }
 
-static bool emumouse_send_report_native(void *report, size_t len)
+static bool emumouse_send_report_native(uint8_t but, int16_t x, int16_t y)
 {
 	int result;
 
-	//char *reportc = (char *)report;
+	int8_t report[4];
+	report[0] = but;
+	report[1] = x & 0xff;
+	report[2] = (x >> 8) & 0x0f;
+	report[2] |= (y << 4) & 0xf0;
+	report[3] = y >> 4;
 
-	//char fancy_report[3 * len + 1];
-	//sprintf(fancy_report, "%hhx %hhx %hhx %hhx %hhx %hhx %hhx %hhx",
-	//	reportc[0],
-	//	reportc[1],
-	//	reportc[2],
-	//	reportc[3],
-	//	reportc[4],
-	//	reportc[5],
-	//	reportc[6],
-	//	reportc[7]);
+	char *reportc = (char *)report;
 
-	//DEBUG("Sending report %s", fancy_report);
+	char fancy_report[3 * 4 + 4];
+	sprintf(fancy_report, "M %hhx %hhx %hhx %hhx\n",
+		reportc[0],
+		reportc[1],
+		reportc[2],
+		reportc[3]);
 
-	result = write_complete(emumouse_fd, report, len);
+	DEBUG("Sending report %s", fancy_report);
+
+	result = write_complete(emumouse_fd, report, sizeof(report));
 	if (result == -1) {
 		PERROR("write_complete");
 		return false;
@@ -229,12 +238,12 @@ static bool emumouse_send_report_native(void *report, size_t len)
 
 bool emumouse_use_aux = false;
 
-bool emumouse_send_report(void *report, size_t len)
+bool emumouse_send_report(uint8_t but, int16_t x, int16_t y)
 {
 	if (emumouse_use_aux) {
-		return emumouse_send_report_aux(report, len);
+		return emumouse_send_report_aux(but, x, y);
 	} else {
-		return emumouse_send_report_native(report, len);
+		return emumouse_send_report_native(but, x, y);
 	}
 
 	return true;

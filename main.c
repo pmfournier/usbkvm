@@ -281,7 +281,7 @@ bool send_pressed_report_from_scancode(uint8_t modifier_state, int64_t scancode,
 
 	report[0] = modifier_state;
 
-	ERROR("Have modifiers %" PRIu8, modifier_state);
+	DEBUG("Have modifiers %" PRIu8, modifier_state);
 
 	if (!is_modifier) {
 		report[2] = scancode;
@@ -392,7 +392,7 @@ bool handle_keyboard_event(void)
 			current_act = -1;
 			return true;
 		}
-		ERROR("%s linux key %" PRId64 " (usb %" PRId64 ")", current_act?"Pressed":"Released", current_key, current_scancode);
+		DEBUG("%s linux key %" PRId64 " (usb %" PRId64 ")", current_act?"Pressed":"Released", current_key, current_scancode);
 
 		int8_t mod = key_to_usb_modifier(current_key);
 
@@ -427,7 +427,7 @@ bool handle_keyboard_event(void)
 
 bool handle_mouse_event(void)
 {
-	static bool button[3] = { 0, 0, 0};
+	static uint8_t button[3] = { 0, 0, 0};
 
 	int result;
 	struct input_event ev;
@@ -463,24 +463,18 @@ bool handle_mouse_event(void)
 		button[2] = ev.value;
 	}
 
-	int8_t report[5];
-	report[0] = button[0] & button[1]<<1 & button[2]<<2;
-	report[1] = x_movement & 0xff;
-	report[2] = (x_movement >> 8) & 0x0f;
-	report[2] |= (y_movement << 4) & 0xf0;
-	report[3] = y_movement >> 4;
 
+	uint8_t but = (button[0] << 0) | (button[1] << 1) | (button[2] << 2);
 
-	if (emumouse_send_report(report, 4) == -1) {
+	if (emumouse_send_report(but, x_movement, y_movement) == -1) {
 		ERROR("failed to send usb report");
 		return false;
 	}
 
-	char report_empty[4] = {0,0,0,0};
-	if (emumouse_send_report(report_empty, 4) == -1) {
-		ERROR("failed to send usb report");
-		return false;
-	}
+	//if (emumouse_send_report(0, 0, 0) == -1) {
+	//	ERROR("failed to send usb report");
+	//	return false;
+	//}
 
 	return true;
 }

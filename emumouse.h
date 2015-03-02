@@ -14,7 +14,7 @@ bool emumouse_register_auxiliary(const char *filename, int speed);
 bool
 emumouse_unregister(void);
 
-bool emumouse_send_report(void *report, size_t len);
+bool emumouse_send_report(uint8_t but, int16_t x, int16_t y);
 
 extern bool emumouse_use_aux;
 
