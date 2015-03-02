@@ -132,71 +132,69 @@ emumouse_register_post_enable(void)
 	return true;
 }
 
-static int auxfd = -1;
+extern int auxfd;
 
-bool emumouse_register_auxiliary(const char *filename, int speed)
-{
-	auxfd = open(filename, O_WRONLY);
-	if (auxfd == -1) {
-		PERROR("open");
-		return false;
-	}
+//static int auxfd = -1;
 
-	struct termios tio;
-	if (tcgetattr(auxfd, &tio) == -1) {
-		PERROR("tcgetattr");
-		return false;
-	}
-
-	if (cfsetspeed(&tio, speed) == -1) {
-		PERROR("cfsetspeed");
-		return false;
-	}
-
-	if (tcsetattr(auxfd, TCSANOW, &tio) == -1) {
-		PERROR("tcsetattr");
-		return false;
-	}
-
-	/* Reset the controller's serial link */
-	if (write(auxfd, "\n", 1) == -1) {
-		PERROR("write");
-		return false;
-	}
-
-	return true;
-}
-
-//static bool emumouse_send_report_aux(void *report, size_t len)
+//bool emumouse_register_auxiliary(const char *filename, int speed)
 //{
-//	int result;
-//
-//	char *reportc = (char *)report;
-//
-//	char fancy_report[3 * len + 1];
-//	sprintf(fancy_report, "%hhx %hhx %hhx %hhx %hhx %hhx %hhx %hhx\n",
-//		reportc[0],
-//		reportc[1],
-//		reportc[2],
-//		reportc[3],
-//		reportc[4],
-//		reportc[5],
-//		reportc[6],
-//		reportc[7]);
-//
-//	DEBUG("Sending report %s", fancy_report);
-//
-//	result = write_complete(auxfd, fancy_report, strlen(fancy_report));
-//	if (result == -1) {
-//		PERROR("write_complete");
+//	auxfd = open(filename, O_WRONLY);
+//	if (auxfd == -1) {
+//		PERROR("open");
 //		return false;
 //	}
-//	if (result == 0) {
-//		ERROR("got end of file from gadget");
+//
+//	struct termios tio;
+//	if (tcgetattr(auxfd, &tio) == -1) {
+//		PERROR("tcgetattr");
 //		return false;
 //	}
+//
+//	if (cfsetspeed(&tio, speed) == -1) {
+//		PERROR("cfsetspeed");
+//		return false;
+//	}
+//
+//	if (tcsetattr(auxfd, TCSANOW, &tio) == -1) {
+//		PERROR("tcsetattr");
+//		return false;
+//	}
+//
+//	/* Reset the controller's serial link */
+//	if (write(auxfd, "\n", 1) == -1) {
+//		PERROR("write");
+//		return false;
+//	}
+//
 //	return true;
 //}
+
+static bool emumouse_send_report_aux(void *report, size_t len)
+{
+	int result;
+
+	char *reportc = (char *)report;
+
+	char fancy_report[3 * len + 1];
+	sprintf(fancy_report, "M %hhx %hhx %hhx %hhx\n",
+		reportc[0],
+		reportc[1],
+		reportc[2],
+		reportc[3]);
+
+	DEBUG("Sending report %s", fancy_report);
+
+	result = write_complete(auxfd, fancy_report, strlen(fancy_report));
+	if (result == -1) {
+		PERROR("write_complete");
+		return false;
+	}
+	if (result == 0) {
+		ERROR("got end of file from gadget");
+		return false;
+	}
+	return true;
+}
 
 static bool emumouse_send_report_native(void *report, size_t len)
 {
@@ -234,7 +232,7 @@ bool emumouse_use_aux = false;
 bool emumouse_send_report(void *report, size_t len)
 {
 	if (emumouse_use_aux) {
-		//return emumouse_send_report_aux(report, len);
+		return emumouse_send_report_aux(report, len);
 	} else {
 		return emumouse_send_report_native(report, len);
 	}

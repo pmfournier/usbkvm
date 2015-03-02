@@ -261,6 +261,7 @@ bool process_command(const char *cmd)
 		state = STATE_KEYMAP_GET_FROM;
 	} else if (!strcmp(cmd, "swap")) {
 		emukb_use_aux = !emukb_use_aux;
+		emumouse_use_aux = !emumouse_use_aux;
 	} else {
 		emukb_erase_chars(strlen(cmd));
 	}
@@ -304,6 +305,7 @@ bool key_pressed(uint8_t modifier_state, int64_t scancode, bool is_modifier)
 	if (state == STATE_PASSTHROUGH) {
 		if (scancode == 71) {
 			emukb_use_aux = !emukb_use_aux;
+			emumouse_use_aux = !emumouse_use_aux;
 			return true;
 		}
 

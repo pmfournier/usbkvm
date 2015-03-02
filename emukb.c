@@ -121,7 +121,7 @@ emukb_register_pre_enable(void)
 	return true;
 }
 
-static int auxfd = -1;
+int auxfd = -1;
 
 bool emukb_register_auxiliary(const char *filename, int speed)
 {
@@ -163,7 +163,7 @@ static bool emukb_send_report_aux(void *report, size_t len)
 	char *reportc = (char *)report;
 
 	char fancy_report[3 * len + 1];
-	sprintf(fancy_report, "%hhx %hhx %hhx %hhx %hhx %hhx %hhx %hhx\n",
+	sprintf(fancy_report, "K %hhx %hhx %hhx %hhx %hhx %hhx %hhx %hhx\n",
 		reportc[0],
 		reportc[1],
 		reportc[2],
