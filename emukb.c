@@ -9,10 +9,10 @@
 
 static size_t emukb_injected_count = 0;
 
-extern const char _binary_report_descriptor_bin_start[];
-extern int _binary_report_descriptor_bin_size;
-const intptr_t _binary_report_descriptor_bin_size_v =
-	(intptr_t) &_binary_report_descriptor_bin_size; 
+extern const char _binary_report_descriptor_kb_bin_start[];
+extern int _binary_report_descriptor_kb_bin_size;
+const intptr_t _binary_report_descriptor_kb_bin_size_v =
+	(intptr_t) &_binary_report_descriptor_kb_bin_size; 
 
 static const char *cmds[] = {
 	"mkdir /config/usb_gadget/kb",
@@ -33,40 +33,16 @@ static const char *cmds[] = {
 
 	"ln -s /config/usb_gadget/kb/functions/hid.usb0 /config/usb_gadget/kb/configs/c.1",
 
-	"echo musb-hdrc.0.auto >/config/usb_gadget/kb/UDC",
+	//"echo musb-hdrc.0.auto >/config/usb_gadget/kb/UDC",
 };
 
 static const char *remove_cmds[] = {
 	"rm /config/usb_gadget/kb/configs/c.1/hid.usb0",
-	"rmdir /config/usb_gadget/kb/configs/c.1",
 	"rmdir /config/usb_gadget/kb/functions/hid.usb0",
-	"rmdir /config/usb_gadget/kb",
 };
 
 static int emukb_fd = -1;
 
-
-int write_complete(int fd, const void *buf, size_t len)
-{
-	size_t orig_len = len;
-
-	for (;;) {
-		int result = write(fd, buf, len);
-		if (result == -1) {
-			return -1;
-		}
-		if (result == 0) {
-			return 0;
-		}
-		len -= result;
-		buf = ((char *)buf) + result;
-
-
-		if (len == 0) {
-			return orig_len;
-		}
-	}
-}
 
 
 // Find device controllers
@@ -103,15 +79,30 @@ static bool write_string_to_file(const char *file, const char *str, size_t len)
 }
 
 bool
-emukb_register(void)
+emukb_register_post_enable(void)
+{
+	const char *gadget_device = "/dev/hidg0";
+	int fd = open(gadget_device, O_RDWR);
+	if (fd == -1) {
+		PERROR("failed to open() %s", gadget_device);
+		return false;
+	}
+
+	emukb_fd = fd;
+
+	return true;
+}
+
+bool
+emukb_register_pre_enable(void)
 {
 	int i;
 	for (i = 0; i < array_len(cmds); i++) {
 		if (cmds[i] == NULL) {
 			if (!write_string_to_file(
 				"/config/usb_gadget/kb/functions/hid.usb0/report_desc",
-				_binary_report_descriptor_bin_start,
-				_binary_report_descriptor_bin_size_v))
+				_binary_report_descriptor_kb_bin_start,
+				_binary_report_descriptor_kb_bin_size_v))
 			{
 				PERROR("failed to write report descriptor");
 				return false;
@@ -126,15 +117,6 @@ emukb_register(void)
 			return false;
 		}
 	}
-
-	const char *gadget_device = "/dev/hidg0";
-	int fd = open(gadget_device, O_RDWR);
-	if (fd == -1) {
-		PERROR("failed to open() %s", gadget_device);
-		return false;
-	}
-
-	emukb_fd = fd;
 
 	return true;
 }

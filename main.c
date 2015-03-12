@@ -15,12 +15,14 @@
 #include <sys/ioctl.h>
 #include <linux/input.h>
 #include <inttypes.h>
+#include <poll.h>
 
 #include <libudev.h>
 
 #include "udev.h"
 #include "libcstuff.h"
 #include "emukb.h"
+#include "emumouse.h"
 #include "keymap.h"
 
 /* A real hid device plugged into this machine's host controller */
@@ -40,6 +42,7 @@ struct hid_in {
 //
 
 int fd_keyboard = -1;
+int fd_mouse = -1;
 
 bool
 register_physical_keyboard(struct hid_in *hin)
@@ -70,6 +73,28 @@ register_physical_keyboard(struct hid_in *hin)
 	//	ERROR("failed to register emulated keyboard");
 	//	return false;
 	//}
+
+	return true;
+}
+
+bool
+register_physical_mouse(struct hid_in *hin)
+{
+	/* Set up listening for events */
+
+	int fd = open(hin->input_dev, O_RDONLY);
+	if (fd == -1) {
+		PERROR("open");
+		return false;
+	}
+
+	int result = ioctl(fd, EVIOCGRAB, 1);
+	if (result == -1) {
+		PERROR("ioctl(EVIOCGRAB)");
+		return false;
+	}
+
+	fd_mouse = fd;
 
 	return true;
 }
@@ -123,23 +148,39 @@ probe_device(struct udev_device *dev)
 		return false;
 	}
 
+	bool is_keyboard = false;
+	bool is_mouse = false;
 	/* USB keyboards have a key bitmap that ends in ffffffff fffffffe */
-	const char needle[] = "ffffffff fffffffe";
-	if (strlen(capabilities_key) < sizeof(needle) -1) {
-		DEBUG("rejected device because it doesn't have the right key capabilities length");
-		return false;
+	const char needle_keyboard_end[] = "ffffffff fffffffe";
+	const char needle_mouse_begin[] = "70000 0 0 0 0 0 0 0 0";
+	if (strlen(capabilities_key) >= sizeof(needle_keyboard_end) -1) {
+		if (strcmp(capabilities_key + strlen(capabilities_key) - (sizeof(needle_keyboard_end) - 1), needle_keyboard_end) == 0) {
+			is_keyboard = true;
+			VERBOSE("Got a good keyboard (%s) [path=%s] [%s]", event_dev, udev_device_get_syspath(orig_dev), capabilities_key);
+
+		} else {
+			DEBUG("rejected device as keyboard because it doesn't have the right key capabilities (%s)", capabilities_key);
+		}
+
+	} else {
+		DEBUG("rejected device as keyboard because it doesn't have the right key capabilities length");
 	}
 
-	if (strcmp(capabilities_key + strlen(capabilities_key) - (sizeof(needle) - 1), needle) != 0) {
-		DEBUG("rejected device because it doesn't have the right key capabilities (%s)", capabilities_key);
-		return false;
+	if (strlen(capabilities_key) >= sizeof(needle_mouse_begin) -1) {
+		if (strcmp(capabilities_key, needle_mouse_begin) == 0) {
+			is_mouse = true;
+			VERBOSE("Got a good mouse (%s) [path=%s] [%s]", event_dev, udev_device_get_syspath(orig_dev), capabilities_key);
+		} else {
+			DEBUG("rejected device as mouse because it doesn't have the right key capabilities (%s)", capabilities_key);
+		}
+
+	} else {
+		DEBUG("rejected device as mouse because it doesn't have the right key capabilities length");
 	}
 
 	/* Ok we have a usb device which resolved as hid and input.
 	 * Still check if it's a type that interests us.
 	 */
-
-	VERBOSE("Got a good device (%s) [path=%s] [%s]", event_dev, udev_device_get_syspath(orig_dev), capabilities_key);
 
 	/* We have a device we're interested in */
 
@@ -161,9 +202,19 @@ probe_device(struct udev_device *dev)
 		return false;
 	}
 
-	if (!register_physical_keyboard(hin)) {
-		ERROR("failed to register keyboard");
-		return false;
+	if (is_keyboard) {
+		if (!register_physical_keyboard(hin)) {
+			ERROR("failed to register keyboard");
+			return false;
+		}
+	}
+
+	/* FIXME */
+	if (is_mouse && fd_mouse == -1) {
+		if (!register_physical_mouse(hin)) {
+			ERROR("failed to register mouse");
+			return false;
+		}
 	}
 
 	return true;
@@ -310,67 +361,166 @@ bool key_released(uint8_t modifier_state, int64_t scancode, bool is_modifier)
 	return true;
 }
 
-
-
-bool input_loop(void)
+bool handle_keyboard_event(void)
 {
 	int result;
 	struct input_event ev;
-	uint8_t modifier_state = 0;
+	static uint8_t modifier_state = 0;
 
-	int64_t current_key = 0;
-	int64_t current_scancode = 0;
-	int64_t current_act = -1;
+	static int64_t current_key = 0;
+	static int64_t current_scancode = 0;
+	static int64_t current_act = -1;
 
-	for (;;) {
-		result = read(fd_keyboard, &ev, sizeof(struct input_event));
-		if (result == -1) {
-			PERROR("read");
-			return false;
-		}
-		if (result == 0) {
-			ERROR("Got end of file on evdev");
-			return false;
-		}
 
-		if (ev.type == EV_SYN) {
-			/* Done, check if we have a valid event */
-			if (!current_key || !current_scancode || current_act == -1) {
-				current_key = 0;
-				current_scancode = 0;
-				current_act = -1;
-				continue;
-			}
-			ERROR("%s linux key %" PRId64 " (usb %" PRId64 ")", current_act?"Pressed":"Released", current_key, current_scancode);
+	result = read(fd_keyboard, &ev, sizeof(struct input_event));
+	if (result == -1) {
+		PERROR("read");
+		return false;
+	}
+	if (result == 0) {
+		ERROR("Got end of file on evdev");
+		return false;
+	}
 
-			int8_t mod = key_to_usb_modifier(current_key);
-
-			if (current_act == 1) {
-				if (mod != -1) {
-					modifier_state |= (1 << mod);
-				}
-				key_pressed(modifier_state, current_scancode, (mod != -1));
-			} else {
-				if (mod != -1) {
-					modifier_state &= ~(1 << mod);
-				}
-				key_released(modifier_state, current_scancode, (mod != -1));
-			}
-
+	if (ev.type == EV_SYN) {
+		/* Done, check if we have a valid event */
+		if (!current_key || !current_scancode || current_act == -1) {
 			current_key = 0;
 			current_scancode = 0;
 			current_act = -1;
+			return true;
+		}
+		ERROR("%s linux key %" PRId64 " (usb %" PRId64 ")", current_act?"Pressed":"Released", current_key, current_scancode);
+
+		int8_t mod = key_to_usb_modifier(current_key);
+
+		if (current_act == 1) {
+			if (mod != -1) {
+				modifier_state |= (1 << mod);
+			}
+			key_pressed(modifier_state, current_scancode, (mod != -1));
+		} else {
+			if (mod != -1) {
+				modifier_state &= ~(1 << mod);
+			}
+			key_released(modifier_state, current_scancode, (mod != -1));
 		}
 
-		if (ev.type == EV_KEY && (ev.value == 0 || ev.value == 1)) {
-			current_key = ev.code;
-			current_act = ev.value;
+		current_key = 0;
+		current_scancode = 0;
+		current_act = -1;
+	}
+
+	if (ev.type == EV_KEY && (ev.value == 0 || ev.value == 1)) {
+		current_key = ev.code;
+		current_act = ev.value;
+	}
+
+	if (ev.type == EV_MSC && ev.code == MSC_SCAN) {
+		current_scancode = ev.value & 0xffff;
+	}
+
+	return true;
+}
+
+bool handle_mouse_event(void)
+{
+	static bool button[3] = { 0, 0, 0};
+
+	int result;
+	struct input_event ev;
+
+	result = read(fd_mouse, &ev, sizeof(struct input_event));
+	if (result == -1) {
+		PERROR("read");
+		return false;
+	}
+	if (result == 0) {
+		ERROR("Got end of file on evdev");
+		return false;
+	}
+
+	DEBUG("Got a mouse event! %" PRIu16 " %" PRIu16 " %" PRId32, ev.type, ev.code, ev.value);
+	int16_t x_movement = 0;
+	int16_t y_movement = 0;
+
+	if (ev.type == 2 && ev.code == 0) {
+		x_movement = ev.value;
+	}
+
+	if (ev.type == 2 && ev.code == 1) {
+		y_movement = ev.value;
+	}
+	if (ev.type == 1 && ev.code == BTN_LEFT) {
+		button[0] = ev.value;
+	}
+	if (ev.type == 1 && ev.code == BTN_RIGHT) {
+		button[1] = ev.value;
+	}
+	if (ev.type == 1 && ev.code == BTN_MIDDLE) {
+		button[2] = ev.value;
+	}
+
+	int8_t report[5];
+	report[0] = button[0] & button[1]<<1 & button[2]<<2;
+	report[1] = x_movement & 0xff;
+	report[2] = (x_movement >> 8) & 0x0f;
+	report[2] |= (y_movement << 4) & 0xf0;
+	report[3] = y_movement >> 4;
+
+
+	if (emumouse_send_report(report, 4) == -1) {
+		ERROR("failed to send usb report");
+		return false;
+	}
+
+	char report_empty[4] = {0,0,0,0};
+	if (emumouse_send_report(report_empty, 4) == -1) {
+		ERROR("failed to send usb report");
+		return false;
+	}
+
+	return true;
+}
+
+bool input_loop(void)
+{
+	size_t n_poll_fds = 0;
+	struct pollfd pfd[2];
+	if (fd_keyboard != -1) {
+		pfd[n_poll_fds].fd = fd_keyboard;
+		pfd[n_poll_fds].events = POLLIN;
+		n_poll_fds++;
+	} if (fd_mouse != -1) {
+		pfd[n_poll_fds].fd = fd_mouse;
+		pfd[n_poll_fds].events = POLLIN;
+		n_poll_fds++;
+	} else {
+		/* No keyboard nor mouse */
+		ERROR("no keyboard nor mouse; not continuing with event loop");
+		return false;
+	}
+
+	for (;;) {
+		if (poll(pfd, n_poll_fds, -1) == -1) {
+			PERROR("poll failed");
+			return false;
 		}
 
-		if (ev.type == EV_MSC && ev.code == MSC_SCAN) {
-			current_scancode = ev.value & 0xffff;
+		for (int i = 0; i < n_poll_fds; i++) {
+			if (!pfd[i].revents) {
+				continue;
+			}
+
+			if (pfd[i].fd == fd_keyboard) {
+				handle_keyboard_event();
+			} else {
+				handle_mouse_event();
+			}
 		}
 	}
+
+	return true;
 }
 
 bool run(void)
@@ -378,14 +528,31 @@ bool run(void)
 	keymap_init();
 
 	emukb_unregister();
-	emukb_register();
-	if (!emukb_register_auxiliary("/dev/ttyUSB0", 115200)) {
+	emumouse_unregister();
+	system("rmdir /config/usb_gadget/kb/configs/c.1");
+	system("rmdir /config/usb_gadget/kb");
+
+	emukb_register_pre_enable();
+	if (!emukb_register_auxiliary("/dev/ttyO1", 115200)) {
 		ERROR("failed to register auxiliary gadget hardware");
 		return false;
 	}
 
+	emumouse_register_pre_enable();
+
+	// ENABLE
+	system("echo musb-hdrc.0.auto >/config/usb_gadget/kb/UDC");
+
+	emukb_register_post_enable();
+	emumouse_register_post_enable();
+
 	/* Look at installed hardware */
 	udev_initial_probe(probe_device);
+
+	if (fd_keyboard == -1) {
+		ERROR("failed to probe keyboard");
+		return false;
+	}
 
 	input_loop();
 	

@@ -27,4 +27,6 @@ extern int __loglevel;
 
 #define array_len(__arr) (sizeof(__arr) / sizeof(__arr[0]))
 
+int write_complete(int fd, const void *buf, size_t len);
+
 #endif /* LIBCSTUFF_H */

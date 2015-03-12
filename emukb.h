@@ -4,7 +4,10 @@
 #include <stdbool.h>
 
 bool
-emukb_register(void);
+emukb_register_pre_enable(void);
+
+bool
+emukb_register_post_enable(void);
 
 bool emukb_register_auxiliary(const char *filename, int speed);
 
