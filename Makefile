@@ -1,5 +1,5 @@
 LDFLAGS=-ludev -g
-CFLAGS=-g -I../github/libcstuff -Wall -Werror
+CFLAGS=-g -Ilibcstuff -Wall -Werror
 
 all: kb
 
