@@ -7,10 +7,15 @@ all: kb
 	@echo [CC] $<
 	@gcc $(CFLAGS) -c $<
 
+report_descriptor.o: report_descriptor.bin
+	@echo [BIN] $<
+	@ld -r -b binary report_descriptor.bin -o report_descriptor.o
+
 libcstuff.o: libcstuff/libcstuff.c
+	@echo [CC] $<
 	@gcc $(CFLAGS) -o $@ -c $<
 
-kb: libcstuff.o main.o udev.o emukb.o
+kb: libcstuff.o main.o udev.o emukb.o report_descriptor.o
 	@echo [LD] $@
 	@gcc $(CFLAGS) $(LDFLAGS) -o kb $^
 
