@@ -10,7 +10,7 @@ all: kb
 libcstuff.o: libcstuff/libcstuff.c
 	@gcc $(CFLAGS) -o $@ -c $<
 
-kb: libcstuff.o main.o udev.o
+kb: libcstuff.o main.o udev.o emukb.o
 	@echo [LD] $@
 	@gcc $(CFLAGS) $(LDFLAGS) -o kb $^
 

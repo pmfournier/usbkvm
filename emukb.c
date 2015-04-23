@@ -1,28 +1,54 @@
+#include <stdbool.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 #include "libcstuff.h"
 
 static const char *cmds[] = {
 	"mkdir /config/usb_gadget/kb",
-	"cd /config/usb_gadget/kb",
-	"echo 0x1234 >idVendor",
-	"echo 0x5678 >idProduct",
-	"echo 0x0100 >bcdDevice",
-	"echo 0x0110 >bcdUSB",
-	"mkdir configs/c.1",
+	"echo 0x1234 >/config/usb_gadget/kb/idVendor",
+	"echo 0x5678 >/config/usb_gadget/kb/idProduct",
+	"echo 0x0100 >/config/usb_gadget/kb/bcdDevice",
+	"echo 0x0110 >/config/usb_gadget/kb/bcdUSB",
+	"mkdir /config/usb_gadget/kb/configs/c.1",
 	// TODO strings
-	"echo 500 >configs/c.1/MaxPower",
+	"echo 500 >/config/usb_gadget/kb/configs/c.1/MaxPower",
 
-	"mkdir functions/hid.usb0",
-	"echo 1 >functions/hid.usb0/subclass", // boot interface subclass
-	"echo 1 >functions/hid.usb0/protocol", // keyboard
+	"mkdir /config/usb_gadget/kb/functions/hid.usb0",
+	"echo 1 >/config/usb_gadget/kb/functions/hid.usb0/subclass", // boot interface subclass
+	"echo 1 >/config/usb_gadget/kb/functions/hid.usb0/protocol", // keyboard
 
-	"ln -s functions/hid.usb0 configs/c.1",
+	"ln -s /config/usb_gadget/kb/functions/hid.usb0 /config/usb_gadget/kb/configs/c.1",
 
-	"echo musb-hdrc.0.auto >UDC",
+	"echo musb-hdrc.0.auto >/config/usb_gadget/kb/UDC",
+};
+
+static const char *remove_cmds[] = {
+	"rm /config/usb_gadget/kb/configs/c.1/hid.usb0",
+	"rmdir /config/usb_gadget/kb/configs/c.1",
+	"rmdir /config/usb_gadget/kb/functions/hid.usb0",
+	"rmdir /config/usb_gadget/kb",
 };
 
 
 // Find device controllers
-"ls /sys/class/udc"
+//"ls /sys/class/udc"
+
+bool
+emukb_unregister(void)
+{
+	/* Don't care about errors here */
+	int i;
+	for (i = 0; i < array_len(remove_cmds); i++) {
+		DEBUG("running command %s", remove_cmds[i]);
+		if (system(remove_cmds[i]) != 0) {
+			DEBUG("failed to run command [%s] but ignoring", remove_cmds[i]);
+		}
+	}
+
+	return true;
+}
 
 bool
 emukb_register(void)
@@ -30,7 +56,7 @@ emukb_register(void)
 	int i;
 	for (i = 0; i < array_len(cmds); i++) {
 		VERBOSE("running command %s", cmds[i]);
-		if (system(cmds[i] != 0)) {
+		if (system(cmds[i]) != 0) {
 			ERROR("failed to run command [%s]", cmds[i]);
 			return false;
 		}

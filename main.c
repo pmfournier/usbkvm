@@ -16,6 +16,7 @@
 
 #include "udev.h"
 #include "libcstuff.h"
+#include "emukb.h"
 
 /* A real hid device plugged into this machine's host controller */
 struct hid_in {
@@ -146,6 +147,11 @@ probe_device(struct udev_device *dev)
 }
 
 bool run(void) {
+	emukb_unregister();
+	emukb_register();
+
+	exit(0);
+
 	/* Look at installed hardware */
 	udev_initial_probe(probe_device);
 	
