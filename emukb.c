@@ -3,8 +3,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <termios.h>
 
 #include "libcstuff.h"
+
+static size_t emukb_injected_count = 0;
 
 extern const char _binary_report_descriptor_bin_start[];
 extern int _binary_report_descriptor_bin_size;
@@ -136,7 +139,73 @@ emukb_register(void)
 	return true;
 }
 
-bool emukb_send_report(void *report, size_t len)
+static int auxfd = -1;
+
+bool emukb_register_auxiliary(const char *filename, int speed)
+{
+	auxfd = open(filename, O_WRONLY);
+	if (auxfd == -1) {
+		PERROR("open");
+		return false;
+	}
+
+	struct termios tio;
+	if (tcgetattr(auxfd, &tio) == -1) {
+		PERROR("tcgetattr");
+		return false;
+	}
+
+	if (cfsetspeed(&tio, speed) == -1) {
+		PERROR("cfsetspeed");
+		return false;
+	}
+
+	if (tcsetattr(auxfd, TCSANOW, &tio) == -1) {
+		PERROR("tcsetattr");
+		return false;
+	}
+
+	/* Reset the controller's serial link */
+	if (write(auxfd, "\n", 1) == -1) {
+		PERROR("write");
+		return false;
+	}
+
+	return true;
+}
+
+static bool emukb_send_report_aux(void *report, size_t len)
+{
+	int result;
+
+	char *reportc = (char *)report;
+
+	char fancy_report[3 * len + 1];
+	sprintf(fancy_report, "%hhx %hhx %hhx %hhx %hhx %hhx %hhx %hhx\n",
+		reportc[0],
+		reportc[1],
+		reportc[2],
+		reportc[3],
+		reportc[4],
+		reportc[5],
+		reportc[6],
+		reportc[7]);
+
+	DEBUG("Sending report %s", fancy_report);
+
+	result = write_complete(auxfd, fancy_report, strlen(fancy_report));
+	if (result == -1) {
+		PERROR("write_complete");
+		return false;
+	}
+	if (result == 0) {
+		ERROR("got end of file from gadget");
+		return false;
+	}
+	return true;
+}
+
+static bool emukb_send_report_native(void *report, size_t len)
 {
 	int result;
 
@@ -164,5 +233,125 @@ bool emukb_send_report(void *report, size_t len)
 		ERROR("got end of file from gadget");
 		return false;
 	}
+	return true;
+}
+
+bool emukb_use_aux = false;
+
+bool emukb_send_report(void *report, size_t len)
+{
+	if (emukb_use_aux) {
+		return emukb_send_report_aux(report, len);
+	} else {
+		return emukb_send_report_native(report, len);
+	}
+}
+
+char usb2ascii_array[] = {
+	  0,   0,   0,   0, 'a', 'b', 'c', 'd',
+	'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
+	'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+	'u', 'v', 'w', 'x', 'y', 'z', '1', '2',
+	'3', '4', '5', '6', '7', '8', '9', '0',
+	'\n', 27, '\b', '\t', ' ', '-', '=', '[',
+	']', '\\', 0, ';', '\'', '`', ',', '.',
+	'/',   0,  0,   0,   0,   0,   0,   0,
+};
+
+char usb2ascii_shifted_array[] = {
+	  0,   0,   0,   0, 'A', 'B', 'C', 'D',
+	'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+	'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+	'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2',
+	'3', '4', '5', '6', '7', '8', '9', '0',
+	'\n', 27, '\b', '\t', ' ', '_', '+', '{',
+	'}', '|', 0, ':', '"', '~', '<', '>',
+	0,   0,  0,   0,   0,   0,   0,   0,
+};
+
+bool ascii2usb(char c, uint8_t *modifiers_out, char *co)
+{
+	int i;
+
+	*modifiers_out = 0;
+
+	for (i = 0; i < 64; i++) {
+		if (usb2ascii_array[i] == c) {
+			*co = i;
+			return true;
+		}
+	}
+
+	for (i = 0; i < 64; i++) {
+		if (usb2ascii_shifted_array[i] == c) {
+			*modifiers_out = 2; // left shift
+			*co = i;
+			return true;
+		}
+	}
+
+	return true;
+}
+
+bool usb2ascii(uint8_t c, char *co)
+{
+	*co = usb2ascii_array[(int)c];
+
+	return true;
+}
+
+bool emukb_inject_notrack(const char *text)
+{
+	char report[8];
+	const char *p = text;
+	for (;;) {
+		if (*p == 0) {
+			break;
+		}
+
+		memset(report, 0, sizeof(report));
+
+		uint8_t modifiers;
+		ascii2usb(*p, &modifiers, &report[2]);
+		report[0] = modifiers;
+
+		emukb_send_report(report, 8);
+
+		memset(report, 0, sizeof(report));
+		emukb_send_report(report, 8);
+
+		p++;
+	}
+
+	return true;
+}
+
+bool emukb_inject(const char *text)
+{
+	emukb_injected_count += strlen(text);
+	return emukb_inject_notrack(text);
+}
+
+bool emukb_erase_chars(size_t n_chars)
+{
+	int i;
+
+	for (i = 0; i < n_chars + 1; i++) {
+		emukb_inject("\b");
+	}
+
+	return true;
+}
+
+bool emukb_erase_injected(void)
+{
+	int i;
+
+	for (i = 0; i < emukb_injected_count; i++) {
+		emukb_inject_notrack("\b");
+	}
+
+	emukb_injected_count = 0;
+
 	return true;
 }

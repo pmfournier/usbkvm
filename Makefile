@@ -15,7 +15,7 @@ libcstuff.o: libcstuff/libcstuff.c
 	@echo [CC] $<
 	@gcc $(CFLAGS) -o $@ -c $<
 
-kb: libcstuff.o main.o udev.o emukb.o report_descriptor.o
+kb: libcstuff.o main.o udev.o emukb.o report_descriptor.o keymap.o
 	@echo [LD] $@
 	@gcc $(CFLAGS) $(LDFLAGS) -o kb $^
 

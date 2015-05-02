@@ -21,6 +21,7 @@
 #include "udev.h"
 #include "libcstuff.h"
 #include "emukb.h"
+#include "keymap.h"
 
 /* A real hid device plugged into this machine's host controller */
 struct hid_in {
@@ -191,6 +192,126 @@ int8_t key_to_usb_modifier(uint16_t key)
 	return -1;
 }
 
+enum state {
+	STATE_PASSTHROUGH = 0,
+	STATE_COMMAND_INPUT = 1,
+	STATE_KEYMAP_GET_FROM = 2,
+	STATE_KEYMAP_GET_TO = 3,
+} state = STATE_PASSTHROUGH;
+
+bool process_command(const char *cmd)
+{
+	ERROR("Got command %s", cmd);
+
+	if (!strcmp(cmd, "remap")) {
+		emukb_erase_chars(strlen(cmd));
+
+		emukb_inject("Ok enter key to remap: ");
+		state = STATE_KEYMAP_GET_FROM;
+	} else if (!strcmp(cmd, "swap")) {
+		emukb_use_aux = !emukb_use_aux;
+	} else {
+		emukb_erase_chars(strlen(cmd));
+	}
+
+	return true;
+}
+
+char current_command[100];
+size_t current_command_len = 0;
+
+uint8_t keymap_from;
+
+bool send_pressed_report_from_scancode(uint8_t modifier_state, int64_t scancode, bool is_modifier)
+{
+	char report[8];
+	memset(report, 0, sizeof(report));
+
+	report[0] = modifier_state;
+
+	ERROR("Have modifiers %" PRIu8, modifier_state);
+
+	if (!is_modifier) {
+		report[2] = scancode;
+	}
+
+	if (modifier_state == 2 + 4 + 8 + 32 + 64 + 128) {
+		emukb_inject(">");
+		state = STATE_COMMAND_INPUT;
+	}
+
+	if (emukb_send_report(report, 8) == -1) {
+		ERROR("failed to send usb report");
+		return false;
+	}
+
+	return true;
+}
+
+bool key_pressed(uint8_t modifier_state, int64_t scancode, bool is_modifier)
+{
+	if (state == STATE_PASSTHROUGH) {
+		if (scancode == 71) {
+			emukb_use_aux = !emukb_use_aux;
+			return true;
+		}
+
+		uint8_t mapped;
+		keymap_map(scancode, &mapped);
+		send_pressed_report_from_scancode(modifier_state, mapped, is_modifier);
+	} else if (state == STATE_COMMAND_INPUT) {
+		char ascii;
+		usb2ascii(scancode, &ascii);
+
+		if (ascii == '\n') {
+			/* Command done */
+			current_command[current_command_len] = 0;
+			state = STATE_PASSTHROUGH;
+			process_command(current_command);
+			current_command_len = 0;
+
+			return true;
+		}
+
+		current_command[current_command_len++] = ascii;
+		send_pressed_report_from_scancode(modifier_state, scancode, is_modifier);
+		if (current_command_len == sizeof(current_command) - 1) {
+			ERROR("command too long; resetting");
+			current_command_len = 0;
+		}
+	} else if (state == STATE_KEYMAP_GET_FROM) {
+		keymap_from = scancode;
+		state = STATE_KEYMAP_GET_TO;
+		emukb_inject(" Ok; enter destination: ");
+	} else if (state == STATE_KEYMAP_GET_TO) {
+		keymap_remap(keymap_from, scancode);
+		emukb_inject(" Roger. ");
+		state = STATE_PASSTHROUGH;
+		emukb_erase_injected();
+	}
+
+	return true;
+}
+
+bool key_released(uint8_t modifier_state, int64_t scancode, bool is_modifier)
+{
+	if (state == STATE_PASSTHROUGH || state == STATE_COMMAND_INPUT) {
+		char report[8];
+		memset(report, 0, sizeof(report));
+
+		report[0] = modifier_state;
+
+		if (emukb_send_report(report, 8) == -1) {
+			ERROR("failed to send usb report");
+			return false;
+		}
+	}
+
+	return true;
+}
+
+
+
 bool input_loop(void)
 {
 	int result;
@@ -222,25 +343,18 @@ bool input_loop(void)
 			}
 			ERROR("%s linux key %" PRId64 " (usb %" PRId64 ")", current_act?"Pressed":"Released", current_key, current_scancode);
 
-			char report[8];
-			memset(report, 0, sizeof(report));
-
 			int8_t mod = key_to_usb_modifier(current_key);
 
 			if (current_act == 1) {
 				if (mod != -1) {
 					modifier_state |= (1 << mod);
-				} else {
-					report[2] = current_scancode;
 				}
-				report[0] = modifier_state;
-				emukb_send_report(report, 8);
+				key_pressed(modifier_state, current_scancode, (mod != -1));
 			} else {
 				if (mod != -1) {
 					modifier_state &= ~(1 << mod);
 				}
-				report[0] = modifier_state;
-				emukb_send_report(report, 8);
+				key_released(modifier_state, current_scancode, (mod != -1));
 			}
 
 			current_key = 0;
@@ -256,14 +370,19 @@ bool input_loop(void)
 		if (ev.type == EV_MSC && ev.code == MSC_SCAN) {
 			current_scancode = ev.value & 0xffff;
 		}
-
-		//DEBUG("Got event %" PRIu16 " %" PRIu16 " %" PRId32, ev.type, ev.code, ev.value);
 	}
 }
 
-bool run(void) {
+bool run(void)
+{
+	keymap_init();
+
 	emukb_unregister();
 	emukb_register();
+	if (!emukb_register_auxiliary("/dev/ttyUSB0", 115200)) {
+		ERROR("failed to register auxiliary gadget hardware");
+		return false;
+	}
 
 	/* Look at installed hardware */
 	udev_initial_probe(probe_device);
