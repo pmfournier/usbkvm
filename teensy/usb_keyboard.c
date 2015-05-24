@@ -34,8 +34,8 @@
  **************************************************************************/
 
 // You can change these to give your code its own name.
-#define STR_MANUFACTURER	L"MfgName"
-#define STR_PRODUCT		L"Keyboard"
+#define STR_MANUFACTURER	L"Kibby"
+#define STR_PRODUCT_KEYBOARD		L"Keyboard"
 
 
 // Mac OS-X and Linux automatically load the correct drivers.  On
@@ -67,6 +67,10 @@
 #define KEYBOARD_ENDPOINT	3
 #define KEYBOARD_SIZE		8
 #define KEYBOARD_BUFFER		EP_DOUBLE_BUFFER
+
+#define MOUSE_INTERFACE		1
+#define MOUSE_ENDPOINT		3
+#define MOUSE_SIZE		8
 
 static const uint8_t PROGMEM endpoint_config_table[] = {
 	0,
@@ -142,15 +146,46 @@ static const uint8_t PROGMEM keyboard_hid_report_desc[] = {
         0xc0                 // End Collection
 };
 
-#define CONFIG1_DESC_SIZE        (9+9+9+7)
+static const uint8_t PROGMEM mouse_hid_report_desc[] = {
+        0x05, 0x01,                     // Usage Page (Generic Desktop)
+        0x09, 0x02,                     // Usage (Mouse)
+        0xA1, 0x01,                     // Collection (Application)
+        0x05, 0x09,                     //   Usage Page (Button)
+        0x19, 0x01,                     //   Usage Minimum (Button #1)
+        0x29, 0x03,                     //   Usage Maximum (Button #3)
+        0x15, 0x00,                     //   Logical Minimum (0)
+        0x25, 0x01,                     //   Logical Maximum (1)
+        0x95, 0x03,                     //   Report Count (3)
+        0x75, 0x01,                     //   Report Size (1)
+        0x81, 0x02,                     //   Input (Data, Variable, Absolute)
+        0x95, 0x01,                     //   Report Count (1)
+        0x75, 0x05,                     //   Report Size (5)
+        0x81, 0x03,                     //   Input (Constant)
+        0x05, 0x01,                     //   Usage Page (Generic Desktop)
+        0x09, 0x30,                     //   Usage (X)
+        0x09, 0x31,                     //   Usage (Y)
+        0x15, 0x81,                     //   Logical Minimum (-127)
+        0x25, 0x7F,                     //   Logical Maximum (127)
+        0x75, 0x08,                     //   Report Size (8),
+        0x95, 0x02,                     //   Report Count (2),
+        0x81, 0x06,                     //   Input (Data, Variable, Relative)
+        0x09, 0x38,                     //   Usage (Wheel)
+        0x95, 0x01,                     //   Report Count (1),
+        0x81, 0x06,                     //   Input (Data, Variable, Relative)
+        0xC0                            // End Collection
+};
+
+
+#define CONFIG1_DESC_SIZE        (9+9+9+7+9+9+7)
 #define KEYBOARD_HID_DESC_OFFSET (9+9)
+#define MOUSE_HID_DESC_OFFSET (9+9+9+7+9)
 static const uint8_t PROGMEM config1_descriptor[CONFIG1_DESC_SIZE] = {
 	// configuration descriptor, USB spec 9.6.3, page 264-266, Table 9-10
 	9, 					// bLength;
 	2,					// bDescriptorType;
 	LSB(CONFIG1_DESC_SIZE),			// wTotalLength
 	MSB(CONFIG1_DESC_SIZE),
-	1,					// bNumInterfaces
+	2,					// bNumInterfaces
 	1,					// bConfigurationValue
 	0,					// iConfiguration
 	0xC0,					// bmAttributes
@@ -180,6 +215,34 @@ static const uint8_t PROGMEM config1_descriptor[CONFIG1_DESC_SIZE] = {
 	KEYBOARD_ENDPOINT | 0x80,		// bEndpointAddress
 	0x03,					// bmAttributes (0x03=intr)
 	KEYBOARD_SIZE, 0,			// wMaxPacketSize
+	1,					// bInterval
+
+
+	// interface descriptor, USB spec 9.6.5, page 267-269, Table 9-12
+	9,					// bLength
+	4,					// bDescriptorType
+	MOUSE_INTERFACE,			// bInterfaceNumber
+	0,					// bAlternateSetting
+	1,					// bNumEndpoints
+	0x03,					// bInterfaceClass (0x03 = HID)
+	0x01,					// bInterfaceSubClass (0x01 = Boot)
+	0x02,					// bInterfaceProtocol (0x02 = Mouse)
+	0,					// iInterface
+	// HID interface descriptor, HID 1.11 spec, section 6.2.1
+	9,					// bLength
+	0x21,					// bDescriptorType
+	0x11, 0x01,				// bcdHID
+	0,					// bCountryCode
+	1,					// bNumDescriptors
+	0x22,					// bDescriptorType
+	sizeof(mouse_hid_report_desc),		// wDescriptorLength
+	0,
+	// endpoint descriptor, USB spec 9.6.6, page 269-271, Table 9-13
+	7,					// bLength
+	5,					// bDescriptorType
+	MOUSE_ENDPOINT | 0x80,			// bEndpointAddress
+	0x03,					// bmAttributes (0x03=intr)
+	MOUSE_SIZE, 0,				// wMaxPacketSize
 	1					// bInterval
 };
 
@@ -202,9 +265,9 @@ static const struct usb_string_descriptor_struct PROGMEM string1 = {
 	STR_MANUFACTURER
 };
 static const struct usb_string_descriptor_struct PROGMEM string2 = {
-	sizeof(STR_PRODUCT),
+	sizeof(STR_PRODUCT_KEYBOARD),
 	3,
-	STR_PRODUCT
+	STR_PRODUCT_KEYBOARD
 };
 
 // This table defines which descriptor data is sent for each specific
@@ -219,9 +282,11 @@ static const struct descriptor_list_struct {
 	{0x0200, 0x0000, config1_descriptor, sizeof(config1_descriptor)},
 	{0x2200, KEYBOARD_INTERFACE, keyboard_hid_report_desc, sizeof(keyboard_hid_report_desc)},
 	{0x2100, KEYBOARD_INTERFACE, config1_descriptor+KEYBOARD_HID_DESC_OFFSET, 9},
+	{0x2200, MOUSE_INTERFACE, mouse_hid_report_desc, sizeof(mouse_hid_report_desc)},
+	{0x2100, MOUSE_INTERFACE, config1_descriptor+MOUSE_HID_DESC_OFFSET, 9},
 	{0x0300, 0x0000, (const uint8_t *)&string0, 4},
 	{0x0301, 0x0409, (const uint8_t *)&string1, sizeof(STR_MANUFACTURER)},
-	{0x0302, 0x0409, (const uint8_t *)&string2, sizeof(STR_PRODUCT)}
+	{0x0302, 0x0409, (const uint8_t *)&string2, sizeof(STR_PRODUCT_KEYBOARD)}
 };
 #define NUM_DESC_LIST (sizeof(descriptor_list)/sizeof(struct descriptor_list_struct))
 
@@ -257,6 +322,13 @@ static uint8_t keyboard_idle_count=0;
 
 // 1=num lock, 2=caps lock, 4=scroll lock, 8=compose, 16=kana
 volatile uint8_t keyboard_leds=0;
+
+//
+uint8_t mouse_buttons=0;
+static uint8_t mouse_idle_count=0;
+static uint8_t mouse_idle_config=125;
+static uint8_t mouse_protocol=1;
+volatile uint8_t mouse_leds=0;
 
 
 /**************************************************************************
@@ -336,6 +408,38 @@ int8_t usb_keyboard_send(void)
 	return 0;
 }
 
+int8_t usb_mouse_send(int8_t x, int8_t y)
+{
+	uint8_t intr_state, timeout;
+
+	if (!usb_configuration) return -1;
+	intr_state = SREG;
+	cli();
+	UENUM = MOUSE_ENDPOINT;
+	timeout = UDFNUML + 50;
+	while (1) {
+		// are we ready to transmit?
+		if (UEINTX & (1<<RWAL)) break;
+		SREG = intr_state;
+		// has the USB gone offline?
+		if (!usb_configuration) return -1;
+		// have we waited too long?
+		if (UDFNUML == timeout) return -1;
+		// get ready to try checking again
+		intr_state = SREG;
+		cli();
+		UENUM = MOUSE_ENDPOINT;
+	}
+	UEDATX = mouse_buttons;
+	UEDATX = x;
+	UEDATX = y;
+	UEDATX = 0;
+	UEINTX = 0x3A;
+	mouse_idle_count = 0;
+	SREG = intr_state;
+	return 0;
+}
+
 /**************************************************************************
  *
  *  Private Functions - not intended for general user consumption....
@@ -374,6 +478,21 @@ ISR(USB_GEN_vect)
 					for (i=0; i<6; i++) {
 						UEDATX = keyboard_keys[i];
 					}
+					UEINTX = 0x3A;
+				}
+			}
+		}
+
+		if (mouse_idle_config && (++div4 & 3) == 0) {
+			UENUM = MOUSE_ENDPOINT;
+			if (UEINTX & (1<<RWAL)) {
+				mouse_idle_count++;
+				if (mouse_idle_count == mouse_idle_config) {
+					mouse_idle_count = 0;
+					UEDATX = mouse_buttons;
+					UEDATX = 0;
+					UEDATX = 0;
+					UEDATX = 0;
 					UEINTX = 0x3A;
 				}
 			}
@@ -580,6 +699,50 @@ ISR(USB_COM_vect)
 				}
 				if (bRequest == HID_SET_PROTOCOL) {
 					keyboard_protocol = wValue;
+					usb_send_in();
+					return;
+				}
+			}
+		} else if (wIndex == MOUSE_INTERFACE) {
+			if (bmRequestType == 0xA1) {
+				if (bRequest == HID_GET_REPORT) {
+					usb_wait_in_ready();
+					UEDATX = mouse_buttons;
+					UEDATX = 0;
+					UEDATX = 0;
+					UEDATX = 0;
+					usb_send_in();
+					return;
+				}
+				if (bRequest == HID_GET_IDLE) {
+					usb_wait_in_ready();
+					UEDATX = mouse_idle_config;
+					usb_send_in();
+					return;
+				}
+				if (bRequest == HID_GET_PROTOCOL) {
+					usb_wait_in_ready();
+					UEDATX = mouse_protocol;
+					usb_send_in();
+					return;
+				}
+			}
+			if (bmRequestType == 0x21) {
+				if (bRequest == HID_SET_REPORT) {
+					usb_wait_receive_out();
+					mouse_leds = UEDATX;
+					usb_ack_out();
+					usb_send_in();
+					return;
+				}
+				if (bRequest == HID_SET_IDLE) {
+					mouse_idle_config = (wValue >> 8);
+					mouse_idle_count = 0;
+					usb_send_in();
+					return;
+				}
+				if (bRequest == HID_SET_PROTOCOL) {
+					mouse_protocol = wValue;
 					usb_send_in();
 					return;
 				}

@@ -7,7 +7,7 @@
 
 #define CPU_PRESCALE(n) (CLKPR = 0x80, CLKPR = (n))
 
-void process_buffer(char *buf, size_t buf_len)
+void process_buffer_kb(char *buf, size_t buf_len)
 {
 	int n = sscanf(buf, "%hhx %*x %hhx %hhx %hhx %hhx %hhx %hhx",
 		&keyboard_modifier_keys,
@@ -20,6 +20,7 @@ void process_buffer(char *buf, size_t buf_len)
 		&keyboard_keys[5]);
 
 	if (n != 7) {
+		// Parse error reading keyboard report
 		uart_putchar('E');
 		uart_putchar('1');
 		uart_putchar('\n');
@@ -32,6 +33,32 @@ void process_buffer(char *buf, size_t buf_len)
 	uart_putchar('\n');
 
 	usb_keyboard_send();
+}
+
+void process_buffer_mouse(char *buf, size_t buf_len)
+{
+	int8_t x,y,wheel;
+
+	int n = sscanf(buf, "%hhx %hhx %hhx %hhx",
+		&mouse_buttons,
+		&x,
+		&y,
+		&wheel);
+
+	if (n != 4) {
+		// Parse error reading mouse report
+		uart_putchar('E');
+		uart_putchar('5');
+		uart_putchar('\n');
+		
+		return;
+	}
+
+	uart_putchar('O');
+	uart_putchar('k');
+	uart_putchar('\n');
+
+	usb_mouse_send(x,y);
 }
 
 int main(void)
@@ -48,7 +75,25 @@ int main(void)
 			uart_putchar('S');
 			uart_putchar('1');
 			uart_putchar('\n');
-			process_buffer(buf, buf_len);
+
+			if (buf_len < 2) {
+				// Input line too short
+				uart_putchar('E');
+				uart_putchar('3');
+				uart_putchar('\n');
+				buf_len = 0;
+			}
+			if (buf[0] == 'K') {
+				process_buffer_kb(buf + 2, buf_len - 2);
+			} else if (buf[0] == 'M') {
+				process_buffer_mouse(buf + 2, buf_len - 2);
+			} else {
+				// Invalid peripheral specification
+				uart_putchar('E');
+				uart_putchar('4');
+				uart_putchar('\n');
+				buf_len = 0;
+			}
 			buf_len = 0;
 		} else {
 			buf_len++;

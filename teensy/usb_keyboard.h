@@ -12,6 +12,10 @@ extern uint8_t keyboard_modifier_keys;
 extern uint8_t keyboard_keys[6];
 extern volatile uint8_t keyboard_leds;
 
+int8_t usb_mouse_send(int8_t x, int8_t y);
+
+extern uint8_t mouse_buttons;
+
 // This file does not include the HID debug functions, so these empty
 // macros replace them with nothing, so users can compile code that
 // has calls to these functions.
