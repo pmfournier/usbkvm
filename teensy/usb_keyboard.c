@@ -69,13 +69,15 @@
 #define KEYBOARD_BUFFER		EP_DOUBLE_BUFFER
 
 #define MOUSE_INTERFACE		1
-#define MOUSE_ENDPOINT		3
+#define MOUSE_ENDPOINT		4
 #define MOUSE_SIZE		8
+#define MOUSE_BUFFER		EP_DOUBLE_BUFFER
 
 static const uint8_t PROGMEM endpoint_config_table[] = {
 	0,
 	0,
 	1, EP_TYPE_INTERRUPT_IN,  EP_SIZE(KEYBOARD_SIZE) | KEYBOARD_BUFFER,
+	1, EP_TYPE_INTERRUPT_IN,  EP_SIZE(MOUSE_SIZE) | MOUSE_BUFFER,
 	0
 };
 
@@ -483,20 +485,20 @@ ISR(USB_GEN_vect)
 			}
 		}
 
-		if (mouse_idle_config && (++div4 & 3) == 0) {
-			UENUM = MOUSE_ENDPOINT;
-			if (UEINTX & (1<<RWAL)) {
-				mouse_idle_count++;
-				if (mouse_idle_count == mouse_idle_config) {
-					mouse_idle_count = 0;
-					UEDATX = mouse_buttons;
-					UEDATX = 0;
-					UEDATX = 0;
-					UEDATX = 0;
-					UEINTX = 0x3A;
-				}
-			}
-		}
+		//if (mouse_idle_config && (++div4 & 3) == 0) {
+		//	UENUM = MOUSE_ENDPOINT;
+		//	if (UEINTX & (1<<RWAL)) {
+		//		mouse_idle_count++;
+		//		if (mouse_idle_count == mouse_idle_config) {
+		//			mouse_idle_count = 0;
+		//			UEDATX = mouse_buttons;
+		//			UEDATX = 0;
+		//			UEDATX = 0;
+		//			UEDATX = 0;
+		//			UEINTX = 0x3A;
+		//		}
+		//	}
+		//}
 	}
 }
 
@@ -605,7 +607,7 @@ ISR(USB_COM_vect)
 			usb_configuration = wValue;
 			usb_send_in();
 			cfg = endpoint_config_table;
-			for (i=1; i<5; i++) {
+			for (i=1; i<6; i++) {
 				UENUM = i;
 				en = pgm_read_byte(cfg++);
 				UECONX = en;
