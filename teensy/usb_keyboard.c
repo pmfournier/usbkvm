@@ -410,7 +410,7 @@ int8_t usb_keyboard_send(void)
 	return 0;
 }
 
-int8_t usb_mouse_send(int8_t x, int8_t y)
+int8_t usb_mouse_send(int8_t x, int8_t y, int8_t wheel)
 {
 	uint8_t intr_state, timeout;
 
@@ -435,7 +435,7 @@ int8_t usb_mouse_send(int8_t x, int8_t y)
 	UEDATX = mouse_buttons;
 	UEDATX = x;
 	UEDATX = y;
-	UEDATX = 0;
+	UEDATX = wheel;
 	UEINTX = 0x3A;
 	mouse_idle_count = 0;
 	SREG = intr_state;

@@ -58,7 +58,7 @@ void process_buffer_mouse(char *buf, size_t buf_len)
 	uart_putchar('k');
 	uart_putchar('\n');
 
-	usb_mouse_send(x,y);
+	usb_mouse_send(x,y,wheel);
 }
 
 int main(void)
