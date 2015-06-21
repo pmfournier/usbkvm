@@ -428,6 +428,7 @@ bool handle_keyboard_event(void)
 bool handle_mouse_event(void)
 {
 	static uint8_t button[3] = { 0, 0, 0};
+	int8_t wheel = 0;
 
 	int result;
 	struct input_event ev;
@@ -453,6 +454,9 @@ bool handle_mouse_event(void)
 	if (ev.type == 2 && ev.code == 1) {
 		y_movement = ev.value;
 	}
+	if (ev.type == 2 && ev.code == 8) {
+		wheel = ev.value;
+	}
 	if (ev.type == 1 && ev.code == BTN_LEFT) {
 		button[0] = ev.value;
 	}
@@ -466,7 +470,7 @@ bool handle_mouse_event(void)
 
 	uint8_t but = (button[0] << 0) | (button[1] << 1) | (button[2] << 2);
 
-	if (emumouse_send_report(but, x_movement, y_movement) == -1) {
+	if (emumouse_send_report(but, x_movement, y_movement, wheel) == -1) {
 		ERROR("failed to send usb report");
 		return false;
 	}

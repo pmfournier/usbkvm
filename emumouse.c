@@ -169,7 +169,7 @@ extern int auxfd;
 //	return true;
 //}
 
-static bool emumouse_send_report_aux(uint8_t but, int16_t x, int16_t y)
+static bool emumouse_send_report_aux(uint8_t but, int16_t x, int16_t y, int8_t wheel)
 {
 	int result;
 
@@ -177,7 +177,7 @@ static bool emumouse_send_report_aux(uint8_t but, int16_t x, int16_t y)
 	report[0] = but;
 	report[1] = x;
 	report[2] = y;
-	report[3] = 0;
+	report[3] = wheel * 127;
 
 	char *reportc = (char *)report;
 
@@ -202,16 +202,17 @@ static bool emumouse_send_report_aux(uint8_t but, int16_t x, int16_t y)
 	return true;
 }
 
-static bool emumouse_send_report_native(uint8_t but, int16_t x, int16_t y)
+static bool emumouse_send_report_native(uint8_t but, int16_t x, int16_t y, int8_t wheel)
 {
 	int result;
 
-	int8_t report[4];
+	int8_t report[5];
 	report[0] = but;
 	report[1] = x & 0xff;
 	report[2] = (x >> 8) & 0x0f;
 	report[2] |= (y << 4) & 0xf0;
 	report[3] = y >> 4;
+	report[4] = wheel;
 
 	char *reportc = (char *)report;
 
@@ -238,12 +239,12 @@ static bool emumouse_send_report_native(uint8_t but, int16_t x, int16_t y)
 
 bool emumouse_use_aux = false;
 
-bool emumouse_send_report(uint8_t but, int16_t x, int16_t y)
+bool emumouse_send_report(uint8_t but, int16_t x, int16_t y, int8_t wheel)
 {
 	if (emumouse_use_aux) {
-		return emumouse_send_report_aux(but, x, y);
+		return emumouse_send_report_aux(but, x, y, wheel);
 	} else {
-		return emumouse_send_report_native(but, x, y);
+		return emumouse_send_report_native(but, x, y, wheel);
 	}
 
 	return true;
