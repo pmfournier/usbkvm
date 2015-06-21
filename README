@@ -1,0 +1,94 @@
+Installation
+============
+
+This explains how to install the keyboard switcher onto a BeagleBone Black. Installation should be possible on other platforms with only small changes.
+
+Step 1: (Optional) Secure the BeagleBone
+
+	Follow the instructions at http://hacks.pmf.io/2015/06/21/securing-the-beaglebone-black/
+
+Step 2: Upgrade to at least Linux 4.0.0
+
+	Later versions should work as well, but 4.0.0 is fully tested.
+
+	Download the deb package from here:
+	https://rcn-ee.net/deb/wheezy-armhf/v4.0.0-bone0/
+
+	And install.
+
+	This is required due to the dependency on the f_hid usb device function module.
+
+
+Step 3: Prevent the g_multi module from loading
+
+	As of June 2015, the stock Beaglebone image uses this module to provide
+	services on the USB device port. We need to disable it because it conflicts
+	with our usage of the device port.
+
+	In the file:
+	/etc/modprobe.d/local.conf
+
+	Add the line:
+	install g_multi /bin/true
+
+
+Step 4: Install dependencies
+
+	# apt-get install libudev-dev
+	# apt-get install libusb-dev
+
+
+Step 5: Activate the second serial port
+
+	The stock BeagleBone image available as of June 2015 has one serial port activated.
+	This is /dev/ttyO0 and it is used to access the serial console using the dedicated
+	connector on the board. In order to interface with the teensy, a second serial port
+	is required. Normally this would just be a matter of loading the correct device tree
+	overlay. Unfortunately, overlays are not supported in Linux 4.0.0 so a change to the
+	master device tree is required to add /dev/ttyO1.
+
+	a) Backup the device tree
+	# cp /boot/dtbs/4.0.0-bone0/am335x-boneblack.dtb /boot/dtbs/4.0.0-bone0/am335x-boneblack.dtb.bak
+
+	b) Uncompile the master device tree file
+	# dtc -I dtb /boot/dtbs/4.0.0-bone0/am335x-boneblack.dtb -O dts -o /tmp/am335x-boneblack.dts
+
+	c) Apply the patch
+	# patch /tmp/am335x-boneblack.dts <device_tree/activate_ttyO1.diff
+
+	d) Compile the modified device tree
+	# dtc -I dts /tmp/am335x-boneblack.dts -O dtb -o /boot/dtbs/4.0.0-bone0/am335x-boneblack.dtb
+
+	e) Reboot and check for the new serial port in /dev
+	# reboot
+	# ls /dev/ttyO1
+
+
+Step 6: Flash the teensy
+
+	# cd teensy/loader
+	# make
+	# cd ../firmware
+	# make
+	Connect teensy, press button to enter bootloader
+	# ./upload
+
+Step 7: Connect the teensy
+
+	WARNING: A 3.3V CONVERSION IS REQUIRED ON THE TEENSY OR THE BEAGLEBONE WILL BE DAMAGED.
+	https://www.pjrc.com/teensy/3volt.html
+
+	3 wires are required:
+
+	      P9_26    rx|-----------|tx   D3
+	BBB   P9_24    tx|-----------|rx   D2     Teensy
+	      P9_1    gnd|-----------|gnd         3.3V conversion required!
+
+
+Step 8: Setup the cron job
+
+	In root's crontab, add the line (adjust for location of executable):
+
+	# crontab -e
+
+	@reboot /root/usbkbctrl/kb
