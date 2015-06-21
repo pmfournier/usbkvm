@@ -1,0 +1,56 @@
+--- /tmp/orig.dts	2015-06-21 16:51:58.712503374 +0000
++++ /tmp/current.dts	2015-06-21 16:51:45.042503372 +0000
+@@ -94,20 +94,26 @@
+ 			linux,phandle = <0x28>;
+ 			phandle = <0x28>;
+ 		};
+ 
+ 		pinmux_uart0_pins {
+ 			pinctrl-single,pins = <0x170 0x30 0x174 0x0>;
+ 			linux,phandle = <0x27>;
+ 			phandle = <0x27>;
+ 		};
+ 
++		pinmux_uart1_pins {
++			pinctrl-single,pins = <0x180 0x30 0x184 0x0>;
++			linux,phandle = <0x41>;
++			phandle = <0x41>;
++		};
++
+ 		pinmux_clkout2_pin {
+ 			pinctrl-single,pins = <0x1b4 0x3>;
+ 			linux,phandle = <0x4>;
+ 			phandle = <0x4>;
+ 		};
+ 
+ 		cpsw_default {
+ 			pinctrl-single,pins = <0x108 0x28 0x10c 0x28 0x110 0x30 0x114 0x0 0x118 0x30 0x11c 0x0 0x120 0x0 0x124 0x0 0x128 0x0 0x12c 0x30 0x130 0x30 0x134 0x30 0x138 0x30 0x13c 0x30 0x140 0x30>;
+ 			linux,phandle = <0x37>;
+ 			phandle = <0x37>;
+@@ -984,23 +990,25 @@
+ 			pinctrl-names = "default";
+ 			pinctrl-0 = <0x27>;
+ 		};
+ 
+ 		serial@48022000 {
+ 			compatible = "ti,omap3-uart";
+ 			ti,hwmods = "uart2";
+ 			clock-frequency = <0x2dc6c00>;
+ 			reg = <0x48022000 0x2000>;
+ 			interrupts = <0x49>;
+-			status = "disabled";
++			status = "okay";
+ 			dmas = <0x26 0x1c 0x26 0x1d>;
+ 			dma-names = "tx", "rx";
++			pinctrl-names = "default";
++			pinctrl-0 = <0x41>;
+ 		};
+ 
+ 		serial@48024000 {
+ 			compatible = "ti,omap3-uart";
+ 			ti,hwmods = "uart3";
+ 			clock-frequency = <0x2dc6c00>;
+ 			reg = <0x48024000 0x2000>;
+ 			interrupts = <0x4a>;
+ 			status = "disabled";
+ 			dmas = <0x26 0x1e 0x26 0x1f>;
