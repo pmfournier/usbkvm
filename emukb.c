@@ -297,10 +297,16 @@ bool emukb_inject_notrack(const char *text)
 		ascii2usb(*p, &modifiers, &report[2]);
 		report[0] = modifiers;
 
-		emukb_send_report(report, 8);
+		if (!emukb_send_report(report, 8)) {
+			ERROR("failed to send report");
+			return false;
+		}
 
 		memset(report, 0, sizeof(report));
-		emukb_send_report(report, 8);
+		if (!emukb_send_report(report, 8)) {
+			ERROR("failed to send report");
+			return false;
+		}
 
 		p++;
 	}

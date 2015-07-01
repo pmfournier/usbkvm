@@ -255,15 +255,24 @@ bool process_command(const char *cmd)
 	ERROR("Got command %s", cmd);
 
 	if (!strcmp(cmd, "remap")) {
-		emukb_erase_chars(strlen(cmd));
+		if (!emukb_erase_chars(strlen(cmd))) {
+			ERROR("failed to erase chars");
+			return false;
+		}
 
-		emukb_inject("Ok enter key to remap: ");
+		if (!emukb_inject("Ok enter key to remap: ")) {
+			ERROR("failed to inject to keyboard");
+			return false;
+		}
 		state = STATE_KEYMAP_GET_FROM;
 	} else if (!strcmp(cmd, "swap")) {
 		emukb_use_aux = !emukb_use_aux;
 		emumouse_use_aux = !emumouse_use_aux;
 	} else {
-		emukb_erase_chars(strlen(cmd));
+		if (!emukb_erase_chars(strlen(cmd))) {
+			ERROR("failed to erase chars");
+			return false;
+		}
 	}
 
 	return true;
@@ -288,7 +297,10 @@ bool send_pressed_report_from_scancode(uint8_t modifier_state, int64_t scancode,
 	}
 
 	if (modifier_state == 2 + 4 + 8 + 32 + 64 + 128) {
-		emukb_inject(">");
+		if (!emukb_inject(">")) {
+			ERROR("failed to inject to keyboard");
+			return false;
+		}
 		state = STATE_COMMAND_INPUT;
 	}
 
@@ -335,12 +347,21 @@ bool key_pressed(uint8_t modifier_state, int64_t scancode, bool is_modifier)
 	} else if (state == STATE_KEYMAP_GET_FROM) {
 		keymap_from = scancode;
 		state = STATE_KEYMAP_GET_TO;
-		emukb_inject(" Ok; enter destination: ");
+		if (!emukb_inject(" Ok; enter destination: ")) {
+			ERROR("failed to inject to keyboard");
+			return false;
+		}
 	} else if (state == STATE_KEYMAP_GET_TO) {
 		keymap_remap(keymap_from, scancode);
-		emukb_inject(" Roger. ");
+		if (!emukb_inject(" Roger. ")) {
+			ERROR("failed to inject to keyboard");
+			return false;
+		}
 		state = STATE_PASSTHROUGH;
-		emukb_erase_injected();
+		if (!emukb_erase_injected()) {
+			ERROR("failed to erase injected keys");
+			return false;
+		}
 	}
 
 	return true;
@@ -513,9 +534,15 @@ bool input_loop(void)
 			}
 
 			if (pfd[i].fd == fd_keyboard) {
-				handle_keyboard_event();
+				if (!handle_keyboard_event()) {
+					ERROR("failed to handle keyboard event");
+					return false;
+				}
 			} else {
-				handle_mouse_event();
+				if (!handle_mouse_event()) {
+					ERROR("failed to handle mouse event");
+					return false;
+				}
 			}
 		}
 	}
@@ -532,19 +559,33 @@ bool run(void)
 	system("rmdir /config/usb_gadget/kb/configs/c.1");
 	system("rmdir /config/usb_gadget/kb");
 
-	emukb_register_pre_enable();
+	if (!emukb_register_pre_enable()) {
+		ERROR("emukb_register_pre_enable() failed");
+		return false;
+	}
+
 	if (!emukb_register_auxiliary("/dev/ttyO1", 115200)) {
 		ERROR("failed to register auxiliary gadget hardware");
 		return false;
 	}
 
-	emumouse_register_pre_enable();
+	if (!emumouse_register_pre_enable()) {
+		ERROR("emumouse_register_pre_enable() failed");
+		return false;
+	}
 
 	// ENABLE
 	system("echo musb-hdrc.0.auto >/config/usb_gadget/kb/UDC");
 
-	emukb_register_post_enable();
-	emumouse_register_post_enable();
+	if (!emukb_register_post_enable()) {
+		ERROR("emukb_register_post_enable() failed");
+		return false;
+	}
+
+	if (!emumouse_register_post_enable()) {
+		ERROR("emumouse_register_post_enable() failed");
+		return false;
+	}
 
 	/* Look at installed hardware */
 	udev_initial_probe(probe_device);
