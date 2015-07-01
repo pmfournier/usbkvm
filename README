@@ -91,4 +91,4 @@ Step 8: Setup the cron job
 
 	# crontab -e
 
-	@reboot /root/usbkbctrl/kb
+	@reboot /root/usbkbctrl/run_kb
